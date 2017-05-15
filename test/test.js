@@ -4,9 +4,9 @@ import Fss from '../';
 
 const FILENAME = './test/data/image.jpg';
 
-test('should slice success', t => {
+test('should slice success', function * (t) {
     let fsImage = new Fss({blockSize: 204800, tmpPath: __dirname + '/data/tmp'});
-    let readable = fsImage.slice(FILENAME);
+    let readable = yield fsImage.slice(FILENAME);
     let tmpFilename = './test/data/tmp/slice_tmp.jpg';
 
     return new Promise(function(resolve, reject) {
@@ -31,7 +31,7 @@ test('should sliceToFile success', function * (t) {
     let fsImage = new Fss({blockSize: 204800, tmpPath: __dirname + '/data/tmp'});
     let tmpFilename = './test/data/tmp/sliceToFile_tmp.jpg';
 
-    yield fsImage.sliceToFile(FILENAME, tmpFilename, {start: 0, end: 499999});
+    yield fsImage.sliceToFile(FILENAME, tmpFilename, {start: 0, end: 500000});
 
     t.is(fs.statSync(tmpFilename).size, 500000);
     fs.unlinkSync(tmpFilename);
@@ -51,7 +51,6 @@ test('should sliceToFile default interval success', function * (t) {
 test('should avgSliceToFile default interval success', function * (t) {
     let fsImage = new Fss({blockSize: 204800, tmpPath: __dirname + '/data/tmp'});
     let tmpFilename = './test/data/tmp/avgSliceToFile_default_interval_tmp.jpg';
-
     let res = yield fsImage.avgSliceToFile(FILENAME, tmpFilename);
 
     t.is(fs.statSync(res[0]).size, 204800);
@@ -82,7 +81,6 @@ test('should avgSliceToFile success', function * (t) {
 test('should together success', function * (t) {
     let fsImage = new Fss({blockSize: 204800, tmpPath: __dirname + '/data/tmp'});
     let tmpFilename = './test/data/tmp/together_tmp.jpg';
-
     let res = yield fsImage.avgSliceToFile(FILENAME);
 
     yield fsImage.together(res, tmpFilename);

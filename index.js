@@ -3,6 +3,19 @@ const path = require('path');
 const async = require('async');
 const crypto = require('crypto');
 const merge = require('lodash.merge');
+const fdSlicer = require('fd-slicer');
+
+function openFs(filename) {
+    return new Promise(function(resolve, reject) {
+        fs.open(filename, 'r', function(err, fd) {
+            if(err){
+                return reject(err);
+            }
+
+            return resolve(fd);
+        });
+    });
+}
 
 function isArray(object){
     return Object.prototype.toString.call(object) === '[object Array]';
@@ -29,7 +42,7 @@ function getBlockInterval(index, blockSize){
     blockSize = blockSize || this.options.blockSize;
 
     let start = blockSize * (index - 1);
-    let end = (blockSize * index) - 1;
+    let end = blockSize * index;
 
     return {start, end};
 }
@@ -76,16 +89,22 @@ FsSlice.prototype.slice = function(filename, opts){
 
     opts = (typeof opts) === 'object' ? opts : {};
 
-    if(!opts.start) opts.start = 0;
+    if(opts.start === undefined) opts.start = 0;
 
-    if(!opts.end){
+    if(opts.end === undefined){
         let blockSize = getBlockInterval.call(this, 1).end;
         let fileSize = fs.statSync(filename).size;
 
         opts.end = fileSize < blockSize ? fileSize : blockSize;
     }
 
-    return fs.createReadStream(filename, opts);
+    return openFs(filename).then(function (fd) {
+        let slicer = fdSlicer.createFromFd(fd);
+
+        return Promise.resolve(slicer.createReadStream(opts));
+    }).catch(function (err) {
+        return Promise.reject(err);
+    });
 };
 
 FsSlice.prototype.sliceToFile = function (filename, filepath, rOptions, wOptions) {
@@ -93,23 +112,23 @@ FsSlice.prototype.sliceToFile = function (filename, filepath, rOptions, wOptions
         throw new Error('require filename and filepath');
     }
 
+    let FsSlice = this;
+
     rOptions = (typeof rOptions) === 'object' ? rOptions : {};
     wOptions = (typeof wOptions) === 'object' ? wOptions : {};
 
-    let readable = this.slice(filename, rOptions);
-
     return new Promise(function(resolve, reject) {
-        let writable = fs.createWriteStream(filepath, wOptions);
+        FsSlice.slice(filename, rOptions).then(function (readable) {
+            let writable = fs.createWriteStream(filepath, wOptions);
 
-        readable.pipe(writable);
-
-        readable.on('end', function () {
-            writable.end();
-
-            return resolve();
-        });
-
-        readable.on('error', function (err) {
+            readable.pipe(writable);
+            readable.on('end', function () {
+                return resolve();
+            });
+            readable.on('error', function (err) {
+                return reject(err);
+            });
+        }).catch(function (err) {
             return reject(err);
         });
     });
@@ -178,6 +197,7 @@ FsSlice.prototype.together = function (filenameArray, filepath) {
             readable.pipe(writable, {end: false});
             readable.on("end", function() {
                 index++;
+
                 callback();
             });
         }, function (err) {
