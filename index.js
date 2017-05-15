@@ -175,7 +175,7 @@ FsSlice.prototype.avgSliceToFile = function(opts){
     });
 };
 
-FsSlice.prototype.merge = function (filenameArray, filepath) {
+FsSlice.prototype.join = function (filenameArray, filepath) {
     if(!isArray(filenameArray)){
         throw new Error('filenameArray must be an array');
     }
