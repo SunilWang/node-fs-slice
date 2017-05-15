@@ -59,11 +59,17 @@ function getBlockNum(filename, blockSize) {
 
 module.exports = FsSlice;
 
-function FsSlice(options) {
+function FsSlice(filename, options) {
+    if(!filename){
+        throw new Error('require filename');
+    }
+
     this.options = merge({}, {
         blockSize: 204800, //200KB
         tmpPath: '/tmp/'
     }, options);
+
+    this.fdPromise = openFs(filename);
 }
 
 FsSlice.formatFilename = function (filename, index) {
@@ -82,11 +88,7 @@ FsSlice.formatFilename = function (filename, index) {
  * @param options
  * @returns stream
  */
-FsSlice.prototype.slice = function(filename, opts){
-    if(!filename){
-        throw new Error('require filename');
-    }
-
+FsSlice.prototype.slice = function(opts){
     opts = (typeof opts) === 'object' ? opts : {};
 
     if(opts.start === undefined) opts.start = 0;
@@ -98,7 +100,7 @@ FsSlice.prototype.slice = function(filename, opts){
         opts.end = fileSize < blockSize ? fileSize : blockSize;
     }
 
-    return openFs(filename).then(function (fd) {
+    return this.fdPromise.then(function (fd) {
         let slicer = fdSlicer.createFromFd(fd);
 
         return Promise.resolve(slicer.createReadStream(opts));
@@ -107,9 +109,9 @@ FsSlice.prototype.slice = function(filename, opts){
     });
 };
 
-FsSlice.prototype.sliceToFile = function (filename, filepath, rOptions, wOptions) {
-    if(!filename || !filepath){
-        throw new Error('require filename and filepath');
+FsSlice.prototype.sliceToFile = function (filepath, rOptions, wOptions) {
+    if( !filepath){
+        throw new Error('require filepath');
     }
 
     let FsSlice = this;
@@ -118,7 +120,7 @@ FsSlice.prototype.sliceToFile = function (filename, filepath, rOptions, wOptions
     wOptions = (typeof wOptions) === 'object' ? wOptions : {};
 
     return new Promise(function(resolve, reject) {
-        FsSlice.slice(filename, rOptions).then(function (readable) {
+        FsSlice.slice(rOptions).then(function (readable) {
             let writable = fs.createWriteStream(filepath, wOptions);
 
             readable.pipe(writable);
@@ -134,7 +136,7 @@ FsSlice.prototype.sliceToFile = function (filename, filepath, rOptions, wOptions
     });
 };
 
-FsSlice.prototype.avgSliceToFile = function(filename, opts){
+FsSlice.prototype.avgSliceToFile = function(opts){
     opts = (typeof opts) === 'object' ? opts : {};
 
     let fsSlice = this;
@@ -151,7 +153,7 @@ FsSlice.prototype.avgSliceToFile = function(filename, opts){
             let newFilename = path.join(tmpPath, FsSlice.formatFilename(filename, index));
             let blockInterval = getBlockInterval.call(fsSlice, index, blockSize);
 
-            fsSlice.sliceToFile(filename, newFilename, blockInterval)
+            fsSlice.sliceToFile(newFilename, blockInterval)
                 .then(function () {
                     newFilePath.push(newFilename);
                     index++;
@@ -192,13 +194,18 @@ FsSlice.prototype.together = function (filenameArray, filepath) {
 
             return is;
         }, function(callback){
-            const readable = fs.createReadStream(filenameArray[index]);
+            openFs(filenameArray[index]).then(function (fd) {
+                let slicer = fdSlicer.createFromFd(fd);
+                let readable = slicer.createReadStream();
 
-            readable.pipe(writable, {end: false});
-            readable.on("end", function() {
-                index++;
+                readable.pipe(writable, {end: false});
+                readable.on("end", function() {
+                    index++;
 
-                callback();
+                    callback();
+                });
+            }).catch(function (err) {
+                return callback(err);
             });
         }, function (err) {
             if(err){
