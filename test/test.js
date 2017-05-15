@@ -78,12 +78,12 @@ test('should avgSliceToFile success', function * (t) {
     }
 });
 
-test('should together success', function * (t) {
+test('should merge success', function * (t) {
     let fsImage = new Fss(FILENAME, {blockSize: 204800, tmpPath: __dirname + '/data/tmp'});
-    let tmpFilename = './test/data/tmp/together_tmp.jpg';
+    let tmpFilename = './test/data/tmp/merge_tmp.jpg';
     let res = yield fsImage.avgSliceToFile();
 
-    yield fsImage.together(res, tmpFilename);
+    yield fsImage.merge(res, tmpFilename);
 
     t.is(fs.statSync(FILENAME).size, fs.statSync(tmpFilename).size);
 
