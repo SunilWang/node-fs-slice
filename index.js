@@ -64,12 +64,17 @@ function FsSlice(filename, options) {
         throw new Error('require filename');
     }
 
+    if((typeof filename) !== 'string'){
+        throw new Error('filename must be a string');
+    }
+
     this.options = merge({}, {
         blockSize: 204800, //200KB
         tmpPath: '/tmp/'
     }, options);
 
     this.fdPromise = openFs(filename);
+    this.filename = filename;
 }
 
 FsSlice.formatFilename = function (filename, index) {
@@ -95,7 +100,7 @@ FsSlice.prototype.slice = function(opts){
 
     if(opts.end === undefined){
         let blockSize = getBlockInterval.call(this, 1).end;
-        let fileSize = fs.statSync(filename).size;
+        let fileSize = fs.statSync(this.filename).size;
 
         opts.end = fileSize < blockSize ? fileSize : blockSize;
     }
@@ -141,7 +146,7 @@ FsSlice.prototype.avgSliceToFile = function(opts){
 
     let fsSlice = this;
     let blockSize = opts.blockSize || this.options.blockSize;
-    let blockNum = getBlockNum.call(this, filename, blockSize);
+    let blockNum = getBlockNum.call(this, this.filename, blockSize);
     let tmpPath = opts.tmpPath || this.options.tmpPath;
     let index = opts.index || 1;
     let newFilePath = [];
@@ -150,7 +155,7 @@ FsSlice.prototype.avgSliceToFile = function(opts){
         async.whilst(function () {
             return index <= blockNum;
         }, function (callback) {
-            let newFilename = path.join(tmpPath, FsSlice.formatFilename(filename, index));
+            let newFilename = path.join(tmpPath, FsSlice.formatFilename(fsSlice.filename, index));
             let blockInterval = getBlockInterval.call(fsSlice, index, blockSize);
 
             fsSlice.sliceToFile(newFilename, blockInterval)
