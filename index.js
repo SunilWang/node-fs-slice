@@ -1,9 +1,9 @@
-const fs = require('fs');
-const path = require('path');
-const async = require('async');
-const crypto = require('crypto');
-const merge = require('lodash.merge');
-const fdSlicer = require('fd-slicer');
+var fs = require('fs');
+var path = require('path');
+var async = require('async');
+var crypto = require('crypto');
+var merge = require('lodash.merge');
+var fdSlicer = require('fd-slicer');
 
 function openFs(filename) {
     return new Promise(function(resolve, reject) {
@@ -32,8 +32,8 @@ function fsExistsSync(path){
 
 /**
  *
- * Gets the block's size [获取块的大小]
- * @param index The index of the block, index from 1 to a start [块的索引，索引从1开始]
+ * Gets the block's size
+ * @param index The index of the block, index from 1 to a start 
  * @returns {{start: number, end: number}}
  * @private
  */
@@ -41,8 +41,8 @@ function getBlockInterval(index, blockSize){
     index = index <= 0 ? 1 : index;
     blockSize = blockSize || this.options.blockSize;
 
-    let start = blockSize * (index - 1);
-    let end = blockSize * index;
+    var start = blockSize * (index - 1);
+    var end = blockSize * index;
 
     return {start, end};
 }
@@ -81,17 +81,16 @@ FsSlice.formatFilename = function (filename, index) {
     filename = filename.split('/').pop();
     index = index === undefined ? 1 : index;
 
-    let random = crypto.randomBytes(16).toString('hex');
-    let nowTime = Date.now();
+    var random = crypto.randomBytes(16).toString('hex');
+    var nowTime = Date.now();
 
     return new Buffer(index + filename + random + nowTime).toString('base64') + index + filename;
 };
 
 /**
  *
- * @param filename
- * @param options
- * @returns stream
+ * @param opts
+ * @returns {Promise.<stream>}
  */
 FsSlice.prototype.slice = function(opts){
     opts = (typeof opts) === 'object' ? opts : {};
@@ -99,14 +98,14 @@ FsSlice.prototype.slice = function(opts){
     if(opts.start === undefined) opts.start = 0;
 
     if(opts.end === undefined){
-        let blockSize = getBlockInterval.call(this, 1).end;
-        let fileSize = fs.statSync(this.filename).size;
+        var blockSize = getBlockInterval.call(this, 1).end;
+        var fileSize = fs.statSync(this.filename).size;
 
         opts.end = fileSize < blockSize ? fileSize : blockSize;
     }
 
     return this.fdPromise.then(function (fd) {
-        let slicer = fdSlicer.createFromFd(fd);
+        var slicer = fdSlicer.createFromFd(fd);
 
         return Promise.resolve(slicer.createReadStream(opts));
     }).catch(function (err) {
@@ -119,14 +118,14 @@ FsSlice.prototype.sliceToFile = function (filepath, rOptions, wOptions) {
         throw new Error('require filepath');
     }
 
-    let FsSlice = this;
+    var FsSlice = this;
 
     rOptions = (typeof rOptions) === 'object' ? rOptions : {};
     wOptions = (typeof wOptions) === 'object' ? wOptions : {};
 
     return new Promise(function(resolve, reject) {
         FsSlice.slice(rOptions).then(function (readable) {
-            let writable = fs.createWriteStream(filepath, wOptions);
+            var writable = fs.createWriteStream(filepath, wOptions);
 
             readable.pipe(writable);
             readable.on('end', function () {
@@ -144,19 +143,19 @@ FsSlice.prototype.sliceToFile = function (filepath, rOptions, wOptions) {
 FsSlice.prototype.avgSliceToFile = function(opts){
     opts = (typeof opts) === 'object' ? opts : {};
 
-    let fsSlice = this;
-    let blockSize = opts.blockSize || this.options.blockSize;
-    let blockNum = getBlockNum.call(this, this.filename, blockSize);
-    let tmpPath = opts.tmpPath || this.options.tmpPath;
-    let index = opts.index || 1;
-    let newFilePath = [];
+    var fsSlice = this;
+    var blockSize = opts.blockSize || this.options.blockSize;
+    var blockNum = getBlockNum.call(this, this.filename, blockSize);
+    var tmpPath = opts.tmpPath || this.options.tmpPath;
+    var index = opts.index || 1;
+    var newFilePath = [];
 
     return new Promise(function(resolve, reject) {
         async.whilst(function () {
             return index <= blockNum;
         }, function (callback) {
-            let newFilename = path.join(tmpPath, FsSlice.formatFilename(fsSlice.filename, index));
-            let blockInterval = getBlockInterval.call(fsSlice, index, blockSize);
+            var newFilename = path.join(tmpPath, FsSlice.formatFilename(fsSlice.filename, index));
+            var blockInterval = getBlockInterval.call(fsSlice, index, blockSize);
 
             fsSlice.sliceToFile(newFilename, blockInterval)
                 .then(function () {
@@ -180,18 +179,18 @@ FsSlice.prototype.join = function (filenameArray, filepath) {
         throw new Error('filenameArray must be an array');
     }
 
-    for(let index in filenameArray){
+    for(var index in filenameArray){
         if(!fsExistsSync(filenameArray[index])){
             throw new Error(filenameArray[index] + ' file does not exist');
         }
     }
 
-    let index = 0;
-    let writable = fs.createWriteStream(filepath);
+    var index = 0;
+    var writable = fs.createWriteStream(filepath);
 
     return new Promise(function(resolve, reject) {
         async.whilst(function() {
-            let is = index < filenameArray.length;
+            var is = index < filenameArray.length;
 
             if(!is){
                 writable.end();
@@ -200,8 +199,8 @@ FsSlice.prototype.join = function (filenameArray, filepath) {
             return is;
         }, function(callback){
             openFs(filenameArray[index]).then(function (fd) {
-                let slicer = fdSlicer.createFromFd(fd);
-                let readable = slicer.createReadStream();
+                var slicer = fdSlicer.createFromFd(fd);
+                var readable = slicer.createReadStream();
 
                 readable.pipe(writable, {end: false});
                 readable.on("end", function() {
