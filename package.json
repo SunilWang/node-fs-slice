@@ -1,0 +1,33 @@
+{
+  "name": "node-fs-slice",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "./node_modules/.bin/ava -v ./test/test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SunilWang/node-fs-slice.git"
+  },
+  "keywords": [
+    "slice",
+    "file",
+    "fs",
+    "block",
+    "together"
+  ],
+  "author": "ahwangshu@qq.com",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/SunilWang/node-fs-slice/issues"
+  },
+  "homepage": "https://github.com/SunilWang/node-fs-slice#readme",
+  "dependencies": {
+    "async": "^2.4.0",
+    "lodash.merge": "^4.6.0"
+  },
+  "devDependencies": {
+    "ava": "^0.19.1"
+  }
+}
