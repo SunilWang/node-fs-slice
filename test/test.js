@@ -7,13 +7,21 @@ const TEXT_FILENAME = './test/data/text';
 let fsImage = null;
 let fsText = null;
 
-test.before(() => {
+test.before('init', () => {
     fsImage = new Fss(IMAGE_FILENAME, {blockSize: 204800, destPath: __dirname + '/temp'});
     fsText = new Fss(TEXT_FILENAME, {blockSize: 204800, destPath: __dirname + '/temp'});
 });
 
+test.after('close', t => {
+    fsImage.close();
+    fsText.close();
+
+    fsImage = null;
+    fsText = null;
+});
+
 test('should slice success', function * (t) {
-    let readable = yield fsImage.slice();
+    let readable = fsImage.slice();
     let tempFilename = './test/temp/slice_temp.jpg';
 
     return new Promise(function(resolve, reject) {

@@ -61,8 +61,8 @@ function FsSlice(filename, options) {
         destPath: '/tmp/'
     }, options);
 
-    this.fdPromise = FsSlice.openFs(filename);
     this.filename = filename;
+    this.fd = fs.openSync(this.filename, 'r');
 }
 
 FsSlice.formatFilename = function (filename, index) {
@@ -70,18 +70,6 @@ FsSlice.formatFilename = function (filename, index) {
     index = index === undefined ? 1 : index;
 
     return crypto.randomBytes(16).toString('hex') + index + filename;
-};
-
-FsSlice.openFs = function(filename) {
-    return new Promise(function(resolve, reject) {
-        fs.open(filename, 'r', function(err, fd) {
-            if(err){
-                return reject(err);
-            }
-
-            return resolve(fd);
-        });
-    });
 };
 
 /**
@@ -100,13 +88,9 @@ FsSlice.prototype.slice = function(opts){
         opts.end = getBlockInterval.call(this, 1).end;
     }
 
-    return this.fdPromise.then(function (fd) {
-        var slicer = fdSlicer.createFromFd(fd);
+    var slicer = fdSlicer.createFromFd(this.fd);
 
-        return Promise.resolve(slicer.createReadStream(opts));
-    }).catch(function (err) {
-        return Promise.reject(err);
-    });
+    return slicer.createReadStream(opts);
 };
 
 FsSlice.prototype.sliceAsFile = function (filepath, rOptions, wOptions) {
@@ -120,20 +104,18 @@ FsSlice.prototype.sliceAsFile = function (filepath, rOptions, wOptions) {
     wOptions = (typeof wOptions) === 'object' ? wOptions : {};
 
     return new Promise(function(resolve, reject) {
-        FsSlice.slice(rOptions).then(function (readable) {
-            var writable = fs.createWriteStream(filepath, wOptions);
+        var writable = fs.createWriteStream(filepath, wOptions);
 
-            readable.pipe(writable);
 
-            writable.on('finish', function () {
-                return resolve();
-            });
-            writable.on('error', function (err) {
-                return reject(err);
-            });
-        }).catch(function (err) {
+        writable.on('finish', function () {
+            return resolve();
+        });
+
+        writable.on('error', function (err) {
             return reject(err);
         });
+
+        FsSlice.slice(rOptions).pipe(writable);
     });
 };
 
@@ -185,7 +167,6 @@ FsSlice.prototype.join = function (filenameArray, writable) {
     var index = 0;
 
     return new Promise(function(resolve, reject) {
-
         writable.on('finish', function () {
             return resolve();
         });
@@ -200,18 +181,18 @@ FsSlice.prototype.join = function (filenameArray, writable) {
 
             return is;
         }, function(callback){
-            FsSlice.openFs(filenameArray[index]).then(function (fd) {
-                var slicer = fdSlicer.createFromFd(fd);
-                var readable = slicer.createReadStream();
+            var filenameFd = fs.openSync(filenameArray[index], 'r');
+            var slicer = fdSlicer.createFromFd(filenameFd);
+            var readable = slicer.createReadStream();
 
-                readable.pipe(writable, {end: false});
-                readable.on("end", function() {
-                    index++;
-                    callback();
-                });
-            }).catch(function (err) {
-                return callback(err);
+            readable.on("end", function() {
+                index++;
+                fs.closeSync(filenameFd);
+
+                return callback();
             });
+
+            readable.pipe(writable, {end: false});
         }, function (err) {
             if(err){
                 return reject(err);
@@ -224,3 +205,6 @@ FsSlice.prototype.joinAsFile = function (filenameArray, filepath) {
     return this.join(filenameArray, fs.createWriteStream(filepath));
 };
 
+FsSlice.prototype.close = function () {
+    return fs.closeSync(this.fd);
+};
