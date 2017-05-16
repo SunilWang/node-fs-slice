@@ -5,18 +5,6 @@ var crypto = require('crypto');
 var merge = require('lodash.merge');
 var fdSlicer = require('fd-slicer');
 
-function openFs(filename) {
-    return new Promise(function(resolve, reject) {
-        fs.open(filename, 'r', function(err, fd) {
-            if(err){
-                return reject(err);
-            }
-
-            return resolve(fd);
-        });
-    });
-}
-
 function isArray(object){
     return Object.prototype.toString.call(object) === '[object Array]';
 }
@@ -70,10 +58,10 @@ function FsSlice(filename, options) {
 
     this.options = merge({}, {
         blockSize: 204800, //200KB
-        tmpPath: '/tmp/'
+        destPath: '/tmp/'
     }, options);
 
-    this.fdPromise = openFs(filename);
+    this.fdPromise = FsSlice.openFs(filename);
     this.filename = filename;
 }
 
@@ -81,10 +69,19 @@ FsSlice.formatFilename = function (filename, index) {
     filename = filename.split('/').pop();
     index = index === undefined ? 1 : index;
 
-    var random = crypto.randomBytes(16).toString('hex');
-    var nowTime = Date.now();
+    return crypto.randomBytes(16).toString('hex') + index + filename;
+};
 
-    return new Buffer(index + filename + random + nowTime).toString('base64') + index + filename;
+FsSlice.openFs = function(filename) {
+    return new Promise(function(resolve, reject) {
+        fs.open(filename, 'r', function(err, fd) {
+            if(err){
+                return reject(err);
+            }
+
+            return resolve(fd);
+        });
+    });
 };
 
 /**
@@ -95,13 +92,12 @@ FsSlice.formatFilename = function (filename, index) {
 FsSlice.prototype.slice = function(opts){
     opts = (typeof opts) === 'object' ? opts : {};
 
-    if(opts.start === undefined) opts.start = 0;
+    if(opts.start === undefined){
+        opts.start = 0;
+    }
 
     if(opts.end === undefined){
-        var blockSize = getBlockInterval.call(this, 1).end;
-        var fileSize = fs.statSync(this.filename).size;
-
-        opts.end = fileSize < blockSize ? fileSize : blockSize;
+        opts.end = getBlockInterval.call(this, 1).end;
     }
 
     return this.fdPromise.then(function (fd) {
@@ -113,7 +109,7 @@ FsSlice.prototype.slice = function(opts){
     });
 };
 
-FsSlice.prototype.sliceToFile = function (filepath, rOptions, wOptions) {
+FsSlice.prototype.sliceAsFile = function (filepath, rOptions, wOptions) {
     if( !filepath){
         throw new Error('require filepath');
     }
@@ -128,10 +124,11 @@ FsSlice.prototype.sliceToFile = function (filepath, rOptions, wOptions) {
             var writable = fs.createWriteStream(filepath, wOptions);
 
             readable.pipe(writable);
-            readable.on('end', function () {
+
+            writable.on('finish', function () {
                 return resolve();
             });
-            readable.on('error', function (err) {
+            writable.on('error', function (err) {
                 return reject(err);
             });
         }).catch(function (err) {
@@ -140,13 +137,13 @@ FsSlice.prototype.sliceToFile = function (filepath, rOptions, wOptions) {
     });
 };
 
-FsSlice.prototype.avgSliceToFile = function(opts){
+FsSlice.prototype.avgSliceAsFile = function(opts){
     opts = (typeof opts) === 'object' ? opts : {};
 
     var fsSlice = this;
     var blockSize = opts.blockSize || this.options.blockSize;
     var blockNum = getBlockNum.call(this, this.filename, blockSize);
-    var tmpPath = opts.tmpPath || this.options.tmpPath;
+    var destPath = opts.destPath || this.options.destPath;
     var index = opts.index || 1;
     var newFilePath = [];
 
@@ -154,10 +151,10 @@ FsSlice.prototype.avgSliceToFile = function(opts){
         async.whilst(function () {
             return index <= blockNum;
         }, function (callback) {
-            var newFilename = path.join(tmpPath, FsSlice.formatFilename(fsSlice.filename, index));
+            var newFilename = path.join(destPath, FsSlice.formatFilename(fsSlice.filename, index));
             var blockInterval = getBlockInterval.call(fsSlice, index, blockSize);
 
-            fsSlice.sliceToFile(newFilename, blockInterval)
+            fsSlice.sliceAsFile(newFilename, blockInterval)
                 .then(function () {
                     newFilePath.push(newFilename);
                     index++;
@@ -174,38 +171,42 @@ FsSlice.prototype.avgSliceToFile = function(opts){
     });
 };
 
-FsSlice.prototype.join = function (filenameArray, filepath) {
+FsSlice.prototype.join = function (filenameArray, writable) {
     if(!isArray(filenameArray)){
         throw new Error('filenameArray must be an array');
     }
 
-    for(var index in filenameArray){
-        if(!fsExistsSync(filenameArray[index])){
-            throw new Error(filenameArray[index] + ' file does not exist');
+    for(var i in filenameArray){
+        if(!fsExistsSync(filenameArray[i])){
+            throw new Error(filenameArray[i] + ' file does not exist');
         }
     }
 
     var index = 0;
-    var writable = fs.createWriteStream(filepath);
 
     return new Promise(function(resolve, reject) {
+
+        writable.on('finish', function () {
+            return resolve();
+        });
+
         async.whilst(function() {
             var is = index < filenameArray.length;
 
             if(!is){
                 writable.end();
+                writable.destroy();
             }
 
             return is;
         }, function(callback){
-            openFs(filenameArray[index]).then(function (fd) {
+            FsSlice.openFs(filenameArray[index]).then(function (fd) {
                 var slicer = fdSlicer.createFromFd(fd);
                 var readable = slicer.createReadStream();
 
                 readable.pipe(writable, {end: false});
                 readable.on("end", function() {
                     index++;
-
                     callback();
                 });
             }).catch(function (err) {
@@ -215,9 +216,11 @@ FsSlice.prototype.join = function (filenameArray, filepath) {
             if(err){
                 return reject(err);
             }
-
-            return resolve();
         });
     });
+};
+
+FsSlice.prototype.joinAsFile = function (filenameArray, filepath) {
+    return this.join(filenameArray, fs.createWriteStream(filepath));
 };
 
