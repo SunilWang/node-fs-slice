@@ -1,12 +1,16 @@
 # node-fs-slice
 
-slice file or join files or avg slice file.
+slice file or join files or avg slice file.idea from [slice-file](https://github.com/substack/slice-file).
+
+safely create multiple ReadStream or WriteStream objects from the same file descriptor. from [node-fd-slicer](https://github.com/andrewrk/node-fd-slicer).
 
 [![Build Status](https://api.travis-ci.org/SunilWang/node-fs-slice.svg?branch=master)](https://travis-ci.org/SunilWang/node-fs-slice)
 
 # example
 
 ## slice
+
+slice file, return read stream
 
 ```js
 var fss = require('fs-slice');
@@ -25,9 +29,12 @@ ABM'
 
 ## sliceAsFile
 
+slice file, generate new file
+
 ```js
 var fss = require('fs-slice');
 var fs = require('fs');
+
 var IMAGE_FILENAME = './test/data/image.jpg';
 var fsImage = fss(IMAGE_FILENAME);
 
@@ -84,14 +91,17 @@ new_image:
 
 ## avgSliceAsFile
 
+average slice file, generate multiple file fragments
+
 ```js
 var fss = require('fs-slice');
 var fs = require('fs');
+
 var IMAGE_FILENAME = './test/data/image.jpg';
 var fsImage = fss(IMAGE_FILENAME);
 
 fsImage
-    //blockSize default : 204800; //200kb
+    //blockSize default : 204800 byte (200kb)
     .avgSliceAsFile({blockSize: 100000})
     .then(function (files) {
         console.info('##############', IMAGE_FILENAME, 'size: ', fs.statSync(IMAGE_FILENAME).size);
@@ -129,9 +139,12 @@ fsImage
 
 ## join
 
+multiple file fragments, join into write stream
+
 ```js
 var fss = require('fs-slice');
 var fs = require('fs');
+
 var IMAGE_FILENAME = './test/data/image.jpg';
 var fsImage = fss(IMAGE_FILENAME);
 var tmpFiles = null;
@@ -140,7 +153,10 @@ fsImage
     .avgSliceAsFile({destPath: './test/temp/'})
     .then(function (files) {
         tmpFiles = files;
-        return fsImage.joinAsFile(files, './new_image.jpg');
+
+        var writable = fs.createWriteStream('./new_image.jpg');
+
+        return fsImage.join(files, writable);
     })
     .then(function () {
         for(let file of tmpFiles){
@@ -164,12 +180,14 @@ test/temp/48f548b841d3ceeab7a6887984b1fdf3_3_image.jpg size:  107343
 ./new_image.jpg size:  516943
 ```
 
-
 ## joinAsFile
+
+multiple file fragments, join into one file
 
 ```js
 var fss = require('fs-slice');
 var fs = require('fs');
+
 var TEXT_FILENAME = './test/data/text';
 var fsText = fss(TEXT_FILENAME);
 
@@ -220,6 +238,90 @@ text2:  "\nAB's\nABM'"
 ./new_text size:  20
 
 ```
+
+# methods
+
+``` js
+var fss = require('fs-slice');
+```
+
+## var fssObj = fss(filename, opts={})
+
+Create a fs-slice instance `fssObj` from a `filename` and some options `opts`.
+
+* `opts.blockSize` - Number. set how much data to read in each chunk. Default 204800.
+* `opts.destPath` - String. make sure that it is a folder path. Default `os.tmpdir();`.
+* `opts.fd` - make sure `fd` is a properly initialized file descriptor.
+
+## var stream = fssObj.slice(opts={})
+
+Return a readable stream that emits
+
+Available `opts`:
+
+ * `start` - Number. The offset into the file to start reading from. Defaults 0.
+ * `end` - Number. Exclusive upper bound offset into the file to stop reading
+   from. Defaults 204800.
+ 
+ `opts` is an object or string with the following defaults:
+ 
+ ```
+{
+  flags: 'r',
+  encoding: null,
+  fd: fssObj.fd,
+  mode: 0o666,
+  autoClose: true
+}
+ ```
+ to see [fs.createReadStream](https://nodejs.org/dist/latest-v6.x/docs/api/fs.html#fs_fs_createreadstream_path_options)
+
+## fssObj.sliceAsFile(filepath, rOptions={}, wOptions={}).then(function(){});
+
+ * `filepath` - String. Make sure `filepath` is a file path.
+ * `rOptions` - Object. read stream options.  `wOptions` - Object. write stream options.
+    
+`rOptions wOptions` is an object or string with the following defaults:
+
+```
+rOptions:
+{
+  start: 0,
+  end: 204800,
+  flags: 'r',
+  encoding: null,
+  fd: fssObj.fd,
+  mode: 0o666,
+  autoClose: true
+}
+
+wOptions:
+{
+  flags: 'w',
+  defaultEncoding: 'utf8',
+  fd: fs.openSync(filepath, 'w'),
+  mode: 0o666,
+  autoClose: true
+}
+```
+to see [fs.createReadStream](https://nodejs.org/dist/latest-v6.x/docs/api/fs.html#fs_fs_createreadstream_path_options) [fs.createWriteStream](https://nodejs.org/dist/latest-v6.x/docs/api/fs.html#fs_fs_createwritestream_path_options)
+
+## fssObj.avgSliceAsFile(opts={}).then(function(files){});
+
+Available `opts`:
+
+  * `blockSize` - Number. set how much data to read in each chunk. Default 204800.
+  * `destPath` - String. make sure that it is a folder path. Default `os.tmpdir();`.
+
+## fssObj.join(filenameArray, writable).then(function(){});
+
+  * `filenameArray` - Array[String]. multiple file fragments path, make sure `filenameArray` is a Array.
+  * `writable` - WriteStream. make sure `writable` is a write stream.
+  
+## fssObj.joinAsFile(filenameArray, filepath).then(function(){});
+
+  * `filenameArray` - Array[String]. multiple file fragments path.
+  * `filepath` - WriteStream. Make sure `filepath` is a file path.
 
 # install
 

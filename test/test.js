@@ -72,8 +72,7 @@ test('should sliceAsFile default interval success', function * (t) {
 });
 
 test('should avgSliceAsFile default interval success', function * (t) {
-    let tempFilename = './test/temp/avgSliceAsFile_default_interval_temp.jpg';
-    let files = yield fsImage.avgSliceAsFile(tempFilename);
+    let files = yield fsImage.avgSliceAsFile();
 
     t.is(fs.statSync(files[0]).size, 204800);
     t.is(fs.statSync(files[1]).size, 204800);
