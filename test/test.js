@@ -1,21 +1,19 @@
 import test from 'ava';
 import fs from 'fs';
-import Fss from '../';
+import fss from '../';
 
 const IMAGE_FILENAME = './test/data/image.jpg';
 const TEXT_FILENAME = './test/data/text';
+
 let fsImage = null;
 let fsText = null;
 
 test.before('init', () => {
-    fsImage = new Fss(IMAGE_FILENAME, {blockSize: 204800, destPath: __dirname + '/temp'});
-    fsText = new Fss(TEXT_FILENAME, {blockSize: 204800, destPath: __dirname + '/temp'});
+    fsImage = fss(IMAGE_FILENAME, {blockSize: 204800, });
+    fsText = fss(TEXT_FILENAME, {blockSize: 204800, });
 });
 
-test.after('close', t => {
-    fsImage.close();
-    fsText.close();
-
+test.after('close', () => {
     fsImage = null;
     fsText = null;
 });
@@ -75,28 +73,28 @@ test('should sliceAsFile default interval success', function * (t) {
 
 test('should avgSliceAsFile default interval success', function * (t) {
     let tempFilename = './test/temp/avgSliceAsFile_default_interval_temp.jpg';
-    let res = yield fsImage.avgSliceAsFile(tempFilename);
+    let files = yield fsImage.avgSliceAsFile(tempFilename);
 
-    t.is(fs.statSync(res[0]).size, 204800);
-    t.is(fs.statSync(res[1]).size, 204800);
-    t.is(fs.statSync(res[2]).size, 107343);
+    t.is(fs.statSync(files[0]).size, 204800);
+    t.is(fs.statSync(files[1]).size, 204800);
+    t.is(fs.statSync(files[2]).size, 107343);
 
-    for(let file of res){
+    for(let file of files){
         fs.unlinkSync(file);
     }
 });
 
 test('should avgSliceAsFile success', function * (t) {
-    let res = yield fsImage.avgSliceAsFile({blockSize: 104800});
+    let files = yield fsImage.avgSliceAsFile({blockSize: 104800});
 
-    t.is(res.length, 5);
-    t.is(fs.statSync(res[0]).size, 104800);
-    t.is(fs.statSync(res[1]).size, 104800);
-    t.is(fs.statSync(res[2]).size, 104800);
-    t.is(fs.statSync(res[3]).size, 104800);
-    t.is(fs.statSync(res[4]).size, 97743);
+    t.is(files.length, 5);
+    t.is(fs.statSync(files[0]).size, 104800);
+    t.is(fs.statSync(files[1]).size, 104800);
+    t.is(fs.statSync(files[2]).size, 104800);
+    t.is(fs.statSync(files[3]).size, 104800);
+    t.is(fs.statSync(files[4]).size, 97743);
 
-    for(let file of res){
+    for(let file of files){
         fs.unlinkSync(file);
     }
 });

@@ -1,14 +1,28 @@
+var os = require('os');
 var fs = require('fs');
 var path = require('path');
 var async = require('async');
 var crypto = require('crypto');
-var merge = require('lodash.merge');
 var fdSlicer = require('fd-slicer');
 
-function isArray(object){
-    return Object.prototype.toString.call(object) === '[object Array]';
+/**
+ * Checks if `value` is classified as an `Array` object.
+ *
+ * @param value The value to check.
+ * @returns {boolean} Returns `true` if `value` is an array, else `false`.
+ * @private
+ */
+function isArray(value){
+    return Object.prototype.toString.call(value) === '[object Array]';
 }
 
+/**
+ * Sync function, Check if the file exists
+ *
+ * @param path The path to check.
+ * @returns {boolean} Returns `true` if `path` file exists, else `false`.
+ * @private
+ */
 function fsExistsSync(path){
     try{
         fs.accessSync(path, fs.F_OK);
@@ -19,9 +33,9 @@ function fsExistsSync(path){
 }
 
 /**
- *
  * Gets the block's size
- * @param index The index of the block, index from 1 to a start 
+ * @param index of the block, `index` from 1 to a start
+ * @param blockSize Size of the block
  * @returns {{start: number, end: number}}
  * @private
  */
@@ -35,6 +49,12 @@ function getBlockInterval(index, blockSize){
     return {start, end};
 }
 
+/**
+ * The size of the block, calculate the number of blocks
+ * @param filename
+ * @param blockSize Size of the block
+ * @returns {number}
+ */
 function getBlockNum(filename, blockSize) {
     blockSize = blockSize || this.options.blockSize;
 
@@ -45,9 +65,7 @@ function getBlockNum(filename, blockSize) {
  * Expose `FsSlice`
  */
 
-module.exports = FsSlice;
-
-function FsSlice(filename, options) {
+module.exports = function (filename, opts) {
     if(!filename){
         throw new Error('require filename');
     }
@@ -56,27 +74,28 @@ function FsSlice(filename, options) {
         throw new Error('filename must be a string');
     }
 
-    this.options = merge({}, {
-        blockSize: 204800, //200KB
-        destPath: '/tmp/'
-    }, options);
+    if (!opts) opts = {};
+    if (opts.blockSize === undefined) opts.blockSize = 204800; //200kb
+    if (opts.destPath === undefined) opts.destPath = os.tmpdir();
+    if (opts.fd === undefined) opts.fd = fs.openSync(filename, 'r');
 
+    return new FsSlice(filename, opts);
+};
+
+function FsSlice(filename, options) {
+    this.options = options;
     this.filename = filename;
-    this.fd = fs.openSync(this.filename, 'r');
+    this.fd = options.fd;
 }
 
+//Format File Name
 FsSlice.formatFilename = function (filename, index) {
     filename = filename.split('/').pop();
     index = index === undefined ? 1 : index;
 
-    return crypto.randomBytes(16).toString('hex') + index + filename;
+    return crypto.randomBytes(16).toString('hex') + '_' + index + '_' + filename;
 };
 
-/**
- *
- * @param opts
- * @returns {Promise.<stream>}
- */
 FsSlice.prototype.slice = function(opts){
     opts = (typeof opts) === 'object' ? opts : {};
 
@@ -98,14 +117,13 @@ FsSlice.prototype.sliceAsFile = function (filepath, rOptions, wOptions) {
         throw new Error('require filepath');
     }
 
-    var FsSlice = this;
+    var self = this;
 
-    rOptions = (typeof rOptions) === 'object' ? rOptions : {};
-    wOptions = (typeof wOptions) === 'object' ? wOptions : {};
+    if(typeof rOptions !== 'object') rOptions = {};
+    if(typeof wOptions !== 'object') wOptions = {};
 
     return new Promise(function(resolve, reject) {
         var writable = fs.createWriteStream(filepath, wOptions);
-
 
         writable.on('finish', function () {
             return resolve();
@@ -115,28 +133,29 @@ FsSlice.prototype.sliceAsFile = function (filepath, rOptions, wOptions) {
             return reject(err);
         });
 
-        FsSlice.slice(rOptions).pipe(writable);
+        self.slice(rOptions).pipe(writable);
     });
 };
 
 FsSlice.prototype.avgSliceAsFile = function(opts){
     opts = (typeof opts) === 'object' ? opts : {};
 
-    var fsSlice = this;
+    var self = this;
     var blockSize = opts.blockSize || this.options.blockSize;
     var blockNum = getBlockNum.call(this, this.filename, blockSize);
     var destPath = opts.destPath || this.options.destPath;
     var index = opts.index || 1;
-    var newFilePath = [];
+    var newFilePath = new Array();
 
     return new Promise(function(resolve, reject) {
         async.whilst(function () {
             return index <= blockNum;
         }, function (callback) {
-            var newFilename = path.join(destPath, FsSlice.formatFilename(fsSlice.filename, index));
-            var blockInterval = getBlockInterval.call(fsSlice, index, blockSize);
+            var newFilename = path.join(destPath, FsSlice.formatFilename(self.filename, index));
+            var blockInterval = getBlockInterval.call(self, index, blockSize);
 
-            fsSlice.sliceAsFile(newFilename, blockInterval)
+            self
+                .sliceAsFile(newFilename, blockInterval)
                 .then(function () {
                     newFilePath.push(newFilename);
                     index++;
@@ -164,47 +183,38 @@ FsSlice.prototype.join = function (filenameArray, writable) {
         }
     }
 
-    var index = 0;
-
     return new Promise(function(resolve, reject) {
         writable.on('finish', function () {
             return resolve();
         });
 
-        async.whilst(function() {
-            var is = index < filenameArray.length;
+        writable.on('error', function (err) {
+            return reject(err);
+        });
 
-            if(!is){
-                writable.end();
-                writable.destroy();
-            }
-
-            return is;
-        }, function(callback){
-            var filenameFd = fs.openSync(filenameArray[index], 'r');
+        async.eachSeries(filenameArray, function(file, callback) {
+            var filenameFd = fs.openSync(file, 'r');
             var slicer = fdSlicer.createFromFd(filenameFd);
             var readable = slicer.createReadStream();
 
             readable.on("end", function() {
-                index++;
                 fs.closeSync(filenameFd);
 
                 return callback();
             });
 
             readable.pipe(writable, {end: false});
-        }, function (err) {
-            if(err){
+        }, function(err) {
+            if(err) {
                 return reject(err);
             }
+
+            writable.end();
+            writable.destroy();
         });
     });
 };
 
 FsSlice.prototype.joinAsFile = function (filenameArray, filepath) {
     return this.join(filenameArray, fs.createWriteStream(filepath));
-};
-
-FsSlice.prototype.close = function () {
-    return fs.closeSync(this.fd);
 };

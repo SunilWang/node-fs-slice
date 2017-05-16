@@ -1,7 +1,7 @@
 {
-  "name": "node-fs-slice",
+  "name": "fs-slice",
   "version": "1.0.0",
-  "description": "",
+  "description": "slice file or join files or avg slice file.",
   "main": "index.js",
   "scripts": {
     "test": "./node_modules/.bin/ava -v ./test/test.js"
@@ -14,11 +14,14 @@
     "slice",
     "file",
     "merge",
-    "file join",
-    "file merge",
+    "join",
+    "join files",
+    "merge files",
     "fs",
     "block",
-    "together"
+    "together",
+    "avg",
+    "avg slice"
   ],
   "author": "Sunil Wang <ahwangshu@qq.com>",
   "license": "MIT",
@@ -28,8 +31,7 @@
   "homepage": "https://github.com/SunilWang/node-fs-slice#readme",
   "dependencies": {
     "async": "^2.4.0",
-    "fd-slicer": "^1.0.1",
-    "lodash.merge": "^4.6.0"
+    "fd-slicer": "^1.0.1"
   },
   "devDependencies": {
     "ava": "^0.19.1"
