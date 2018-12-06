@@ -4,11 +4,14 @@
   "description": "slice file or join files or avg slice file.",
   "main": "index.js",
   "scripts": {
-    "test": "./node_modules/.bin/ava -v ./test/test.js"
+    "test": "./node_modules/.bin/ava -v ./test/*.js"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/SunilWang/node-fs-slice.git"
+  },
+  "engines": {
+    "node": ">=4.0.0"
   },
   "keywords": [
     "slice",
@@ -31,9 +34,10 @@
   "homepage": "https://github.com/SunilWang/node-fs-slice#readme",
   "dependencies": {
     "async": "^2.4.0",
-    "fd-slicer": "^1.0.1"
+    "fd-slicer": "^1.0.1",
+    "lodash.assign": "^4.2.0"
   },
   "devDependencies": {
-    "ava": "^0.19.1"
+    "ava": "^0.25.0"
   }
 }
