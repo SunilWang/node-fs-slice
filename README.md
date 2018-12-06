@@ -4,6 +4,7 @@ slice file or join files or avg slice file.idea from [slice-file](https://github
 
 safely create multiple ReadStream or WriteStream objects from the same file descriptor. from [node-fd-slicer](https://github.com/andrewrk/node-fd-slicer).
 
+[![JavaScript Style Guide](https://img.shields.io/badge/code_style-standard-brightgreen.svg)](https://standardjs.com)
 [![Build Status](https://api.travis-ci.org/SunilWang/node-fs-slice.svg?branch=master)](https://travis-ci.org/SunilWang/node-fs-slice)
 
 # example
