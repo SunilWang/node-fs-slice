@@ -1,6 +1,6 @@
 {
   "name": "fs-slice",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "slice file or join files or avg slice file.",
   "main": "index.js",
   "scripts": {
