@@ -30,7 +30,7 @@ var fss = require('fs-slice');
 
 Create a fs-slice instance `fssObj` from a `filename` and some options `opts`.
 
-* `targetFile` - Path | Buffer. target file.
+* `targetFile` - String | Buffer. target file.
 * `opts.blockSize` - Number. set how much data to read in each chunk. Default 204800.
 * `opts.destPath` - String. make sure that it is a folder path. Default `os.tmpdir();`.
 
