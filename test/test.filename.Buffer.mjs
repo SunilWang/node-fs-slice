@@ -24,7 +24,14 @@ let fsText
 function cleanupDir (dir) {
   if (!fs.existsSync(dir)) return
   for (const entry of fs.readdirSync(dir)) {
-    fs.unlinkSync(path.join(dir, entry))
+    const entryPath = path.join(dir, entry)
+    const stat = fs.statSync(entryPath)
+    if (stat.isDirectory()) {
+      cleanupDir(entryPath)
+      fs.rmdirSync(entryPath)
+    } else {
+      fs.unlinkSync(entryPath)
+    }
   }
 }
 
@@ -45,7 +52,7 @@ test.after.always('清理临时目录', () => {
   cleanupDir(TEMP_DIR)
 })
 
-test('slice() 默认块写入成功(Buffer)', async t => {
+test.serial('slice() 默认块写入成功(Buffer)', async t => {
   const readable = fsImage.slice()
   const tempFilename = path.join(TEMP_DIR, 'slice_temp.jpg')
 
@@ -60,13 +67,13 @@ test('slice() 默认块写入成功(Buffer)', async t => {
   t.is(fs.statSync(tempFilename).size, DEFAULT_BLOCK_SIZE)
 })
 
-test('sliceAsFile 指定范围写入成功(Buffer)', async t => {
+test.serial('sliceAsFile 指定范围写入成功(Buffer)', async t => {
   const tempFilename = path.join(TEMP_DIR, 'sliceAsFile_temp.jpg')
   await fsImage.sliceAsFile(tempFilename, { start: 0, end: 500000 })
   t.is(fs.statSync(tempFilename).size, 500000)
 })
 
-test('sliceAsFile 文本内容一致(Buffer)', async t => {
+test.serial('sliceAsFile 文本内容一致(Buffer)', async t => {
   const tempFilename = path.join(TEMP_DIR, 'sliceAsFile_text_temp')
   await fsText.sliceAsFile(tempFilename, { start: 0, end: 10 })
   const data = fs.readFileSync(tempFilename, 'utf-8')
@@ -74,55 +81,57 @@ test('sliceAsFile 文本内容一致(Buffer)', async t => {
   t.is(fs.statSync(tempFilename).size, 10)
 })
 
-test('avgSliceAsFile 生成文件(Buffer)', async t => {
-  const files = await fsImage.avgSliceAsFile()
-  t.is(files.length, 3)
-  t.is(fs.statSync(files[0]).size, DEFAULT_BLOCK_SIZE)
-  t.is(fs.statSync(files[1]).size, DEFAULT_BLOCK_SIZE)
-  t.is(fs.statSync(files[2]).size, 107343)
-  files.forEach(file => fs.unlinkSync(file))
+test.serial('avgSliceAsFile 生成文件(Buffer)', async t => {
+  const { chunks, cleanup } = await fsImage.avgSliceAsFile()
+  t.is(chunks.length, 3)
+  t.true(chunks.every(chunk => typeof chunk.checksum === 'undefined'))
+  t.is(fs.statSync(chunks[0].filepath).size, DEFAULT_BLOCK_SIZE)
+  t.is(fs.statSync(chunks[1].filepath).size, DEFAULT_BLOCK_SIZE)
+  t.is(fs.statSync(chunks[2].filepath).size, 107343)
+  await cleanup()
 })
 
-test('avgSliceAsFile 自定义目录自动创建(Buffer)', async t => {
+test.serial('avgSliceAsFile 自定义目录自动创建(Buffer)', async t => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fs-slice-buffer-'))
   const customDest = path.join(tempDir, 'nested', 'chunks')
   const instance = fss(fs.readFileSync(TEXT_FILENAME), {
     blockSize: 16,
     destPath: customDest
   })
-  const files = await instance.avgSliceAsFile()
+  const { chunks, cleanup } = await instance.avgSliceAsFile({ checksum: true })
   t.true(fs.existsSync(customDest))
-  t.true(files.every(file => file.startsWith(customDest)))
-  files.forEach(file => fs.unlinkSync(file))
+  t.true(chunks.every(chunk => chunk.filepath.startsWith(customDest)))
+  t.true(chunks.every(chunk => typeof chunk.checksum === 'string'))
+  await cleanup()
   fs.rmdirSync(customDest)
   fs.rmdirSync(path.join(tempDir, 'nested'))
   fs.rmdirSync(tempDir)
 })
 
-test('join 将分片拼接与原文件一致(Buffer)', async t => {
+test.serial('join 将分片拼接与原文件一致(Buffer)', async t => {
   const tempFilename = path.join(TEMP_DIR, 'join_temp')
-  const res = await fsText.avgSliceAsFile()
+  const { chunks, cleanup } = await fsText.avgSliceAsFile({ checksum: true })
   const writable = fs.createWriteStream(tempFilename)
-  await fsText.join(res, writable)
+  await fsText.join(chunks, writable, { verify: true })
   const textData = fs.readFileSync(TEXT_FILENAME, 'utf-8')
   const tempData = fs.readFileSync(tempFilename, 'utf-8')
   t.is(textData, tempData)
-  res.forEach(file => fs.unlinkSync(file))
   fs.unlinkSync(tempFilename)
+  await cleanup()
 })
 
-test('joinAsFile 直接输出文件正确(Buffer)', async t => {
+test.serial('joinAsFile 直接输出文件正确(Buffer)', async t => {
   const tempFilename = path.join(TEMP_DIR, 'joinAsFile_temp')
-  const res = await fsText.avgSliceAsFile()
-  await fsText.joinAsFile(res, tempFilename)
+  const { chunks, cleanup } = await fsText.avgSliceAsFile({ checksum: true })
+  await fsText.joinAsFile(chunks, tempFilename, { verify: true })
   const textData = fs.readFileSync(TEXT_FILENAME, 'utf-8')
   const tempData = fs.readFileSync(tempFilename, 'utf-8')
   t.is(textData, tempData)
-  res.forEach(file => fs.unlinkSync(file))
   fs.unlinkSync(tempFilename)
+  await cleanup()
 })
 
-test('join 遇到不存在的分片抛错(Buffer)', async t => {
+test.serial('join 遇到不存在的分片抛错(Buffer)', async t => {
   const tempFilename = path.join(TEMP_DIR, 'join_error')
   const writable = fs.createWriteStream(tempFilename)
   const error = await t.throwsAsync(async () => fsText.join(['./not-exist'], writable))

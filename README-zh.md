@@ -37,11 +37,12 @@ npm install fs-slice
 import fsSlice from 'fs-slice'
 
 async function demo () {
-  const slicer = fsSlice('./big-file.bin', { blockSize: 256 * 1024 })
-  const chunks = await slicer.avgSliceAsFile()
-  console.log('生成分片：', chunks)
+  const slicer = fsSlice('./big-file.bin', { blockSize: 256 * 1024, checksum: true })
+  const { chunks, cleanup } = await slicer.avgSliceAsFile()
+  console.log('生成分片：', chunks.map(chunk => chunk.filepath))
 
-  await slicer.joinAsFile(chunks, './output.bin')
+  await slicer.joinAsFile(chunks, './output.bin', { verify: true })
+  await cleanup()
   console.log('合并完成')
 }
 
@@ -53,42 +54,93 @@ demo().catch(console.error)
 ```js
 const fsSlice = require('fs-slice')
 
-const slicer = fsSlice(Buffer.from('hello world'))
+const slicer = fsSlice(Buffer.from('hello world'), { checksum: true })
 const stream = slicer.slice({ start: 0, end: 5 })
 stream.pipe(process.stdout)
 ```
 
 ## ⚙️ 架构与工作流
 
-1. **实例化**：传入文件路径或 Buffer，可通过 `blockSize`、`destPath`、`filename` 定制行为。
+1. **实例化**：传入文件路径或 Buffer，可同时配置 `blockSize`、`destPath`、命名回调与校验选项。
 2. **切片读取**：使用 `slice` 获取任意范围的可读流；`sliceAsFile` 可将区间直接写入文件。
-3. **平均分片**：调用 `avgSliceAsFile` 按块大小批量输出文件，并支持使用 `index` 续切。
-4. **分片合并**：`join` 接受分片路径数组与目标写流；`joinAsFile` 提供内建写流封装。
+3. **平均分片**：调用 `avgSliceAsFile` 获得包含路径、元数据、校验值的分片描述，并支持并发与续传策略。
+4. **分片合并**：向 `join`/`joinAsFile` 传入分片描述，配合 `verify: true` 自动校验摘要。
+5. **清理临时文件**：执行返回的 `cleanup()` 或后续调用 `cleanupChunks`，安全删除生成的切片。
 
-内部利用 `crypto.randomBytes` 生成随机前缀避免命名冲突，并通过 `ensureDirectorySync` 在写入前确保目录存在。
+内部利用 `crypto.randomBytes` 为每个实例生成固定随机前缀避免命名冲突，并通过 `ensureDirectorySync` 在写入前确保目录存在。
 
 ## 🔍 API 速查表
 
-| 方法                                                   | 说明                                                             |
-| ------------------------------------------------------ | ---------------------------------------------------------------- |
-| `fsSlice(input, opts?)`                              | 工厂函数，返回 `FsSliceInstance`，支持文件路径或 Buffer 输入。 |
-| `slice(options?)`                                    | 返回指定范围的 `Readable` 流，默认读取第一块数据。             |
-| `sliceAsFile(filepath, readOptions?, writeOptions?)` | 将指定区间写入目标文件，并自动清理流事件。                       |
-| `avgSliceAsFile(options?)`                           | 按块大小批量导出文件，`index` 可指定起始块。                   |
-| `join(filenameArray, writable)`                      | 按顺序读取分片并写入给定 `Writable`。                          |
-| `joinAsFile(filenameArray, filepath)`                | 语法糖，内部创建写流并调用 `join`。                            |
-| `formatFilename(index?)`                             | 生成 `<16字节随机数>_<index>_<原文件名>` 的分片名称。          |
+| 方法                                                         | 说明                                                                 |
+| ------------------------------------------------------------ | -------------------------------------------------------------------- |
+| `fsSlice(input, opts?)`                                      | 工厂函数，返回 `FsSliceInstance`，支持文件路径或 Buffer 输入。     |
+| `slice(options?)`                                            | 返回指定范围的 `Readable` 流，默认读取第一块数据。                 |
+| `sliceAsFile(filepath, readOptions?, writeOptions?)`         | 将指定区间写入目标文件，并自动清理流事件。                           |
+| `avgSliceAsFile(options?)`                                   | 按块大小批量生成分片描述（含路径、偏移、校验、元数据）及 `cleanup()`。 |
+| `join(filenameArray, writable, options?)`                    | 按顺序写入分片描述/路径，可通过 `verify: true` 自动校验摘要。        |
+| `joinAsFile(filenameArray, filepath, options?)`              | 语法糖：内部创建写流并支持校验选项。                                 |
+| `verifyChunks(chunks, options?)`                             | 在合并前校验分片的尺寸与校验值。                                     |
+| `cleanupChunks(chunks)`                                      | 批量删除分片文件，忽略已不存在的条目。                               |
+| `formatFilename(index?)`                                     | 生成 `<前缀>_<index>_<原文件名>` 的分片名称，可通过回调覆写。        |
+
+### 分片描述结构
+
+`avgSliceAsFile` 返回的 `chunks` 为分片描述对象，字段含义如下：
+
+| 字段                 | 说明                                                         |
+| -------------------- | ------------------------------------------------------------ |
+| `index`              | 分片的 1 基序号。                                            |
+| `filepath`           | 该分片对应的绝对文件路径。                                   |
+| `start` / `end`      | 相对于原始输入的字节起止位置（闭开区间）。                   |
+| `size`               | 实际写入磁盘的字节数。                                       |
+| `checksum`           | 启用校验后生成的摘要字符串。                                 |
+| `checksumAlgorithm`  | 生成摘要时使用的算法，如 `sha256`。                          |
+| `checksumEncoding`   | 摘要的编码方式，如 `hex`。                                   |
+| `isNew`              | 标记该分片是否在本次调用中新写入。                           |
+| `metadata`           | `metadataProvider` 返回的自定义数据。                         |
+
+若只需要文件路径，可执行 `chunks.map(chunk => chunk.filepath)`。
 
 ### 选项说明
 
 | 参数                            | 类型                      | 默认值                    | 描述                                                               |
 | ------------------------------- | ------------------------- | ------------------------- | ------------------------------------------------------------------ |
-| `blockSize`                   | `number`                | `204800`                | 单个分片的字节大小，必须为正整数。                                 |
-| `destPath`                    | `string`                | `os.tmpdir()`           | `avgSliceAsFile` 输出目录，同时用于随机文件前缀。                |
-| `filename`                    | `string`                | `Date.now().toString()` | Buffer 模式下用于生成分片名称的逻辑文件名。                        |
-| `slice.start` / `slice.end` | `number`                | `0 / blockSize`         | `slice`/`sliceAsFile` 的读取区间，`end` 为开区间。           |
-| `avgSliceAsFile.index`        | `number`                | `1`                     | 指定从第几块开始生成文件，必须为正整数。                           |
-| `writeOptions`                | `fs.WriteStreamOptions` | —                        | 透传至 `fs.createWriteStream`，可自定义 `flags`、`mode` 等。 |
+| 参数                               | 类型                                       | 默认值                      | 描述                                                                                 |
+| ---------------------------------- | ------------------------------------------ | --------------------------- | ------------------------------------------------------------------------------------ |
+| `blockSize`                        | `number`                                   | `204800`                    | 单个分片的字节大小，必须为正整数。                                                   |
+| `destPath`                         | `string`                                   | `os.tmpdir()`               | `avgSliceAsFile` 输出目录，必要时自动创建。                                         |
+| `filename`                         | `string`                                   | `Date.now().toString()`     | Buffer 模式生成分片名称时使用的逻辑文件名。                                           |
+| `filenameFormatter`                | `(info) => string`                         | 每个实例固定随机前缀        | 自定义分片文件命名，入参包含 `{ index, originalName, sourceType }`。               |
+| `metadataProvider`                 | `(info) => Record<string, unknown>`        | `undefined`                 | 为每个分片附加元数据，例如 `{ range: [start, end] }`。                               |
+| `checksum`                         | ``boolean \| ChecksumOptions``             | `false`                     | 启用分片校验值生成，默认算法为 `sha256` + hex。                                      |
+| `resumeStrategy`                   | ``'overwrite' \| 'skipExisting'``          | `'overwrite'`               | 是否跳过尺寸匹配的已存在分片。                                                       |
+| `concurrency`                      | `number`                                   | `1`                         | `avgSliceAsFile` 的最大并发写入任务数。                                              |
+| `slice.start` / `slice.end`        | `number`                                   | `0 / blockSize`             | `slice`/`sliceAsFile` 的读取区间，`end` 为开区间。                                    |
+| `avgSliceAsFile.index`             | `number`                                   | `1`                         | 指定从第几块开始生成分片，必须为正整数。                                             |
+| `avgSliceAsFile.resumeStrategy`    | ``'overwrite' \| 'skipExisting'``          | 实例默认值                  | 针对单次调用覆写续传策略。                                                           |
+| `avgSliceAsFile.concurrency`       | `number`                                   | 实例默认值                  | 针对单次调用覆写并发数量。                                                           |
+| `avgSliceAsFile.checksum`          | ``boolean \| ChecksumOptions``             | 实例默认值                  | 针对单次调用覆写校验算法与编码。                                                     |
+| `writeOptions`                     | `fs.WriteStreamOptions`                    | —                           | 透传至 `fs.createWriteStream`，可自定义 `flags`、`mode` 等。                         |
+
+## 🛠 高级控制
+
+- **命名与元数据**：通过 `filenameFormatter` 固定分片命名，通过 `metadataProvider` 附加业务字段（如上传批次、字节范围）。
+- **校验与验证**：开启 `checksum` 后分片会携带摘要，可在 `verifyChunks()` 或 `join(..., { verify: true })` 阶段自动校验。
+- **并发与续传**：调节 `concurrency` 提升分片速度，结合 `resumeStrategy: 'skipExisting'` 重用已存在且尺寸匹配的文件。
+- **清理工具**：`avgSliceAsFile` 返回的 `cleanup()` 以及实例方法 `cleanupChunks` 会在忽略缺失文件的前提下安全删除分片。
+
+```ts
+const slicer = fsSlice('./movie.mp4', {
+  blockSize: 1024 * 1024,
+  checksum: { algorithm: 'sha1' },
+  filenameFormatter: ({ index, originalName }) => `${originalName}.part.${index}`,
+  metadataProvider: info => ({ range: [info.start, info.end] })
+})
+
+const { chunks, cleanup } = await slicer.avgSliceAsFile({ concurrency: 4, resumeStrategy: 'skipExisting' })
+await slicer.joinAsFile(chunks, './movie-restored.mp4', { verify: true })
+await cleanup()
+```
 
 ## 📚 使用示例
 
@@ -111,30 +163,33 @@ await slicer.sliceAsFile('./temp/part-1.bin', { start: 0, end: 1024 })
 ### 平均分片并续切
 
 ```ts
-// 第一次生成所有分片
-const files = await slicer.avgSliceAsFile()
+// 第一次生成所有分片（包含描述信息）
+const { chunks, cleanup } = await slicer.avgSliceAsFile({ checksum: true })
+const files = chunks.map(chunk => chunk.filepath)
 
-// 如果前两块已上传，可传入 index 从第三块开始
-const rest = await slicer.avgSliceAsFile({ index: 3 })
+// 如果前两块已上传，可传入 index 从第三块开始，并重用已有文件
+const rest = await slicer.avgSliceAsFile({ index: 3, resumeStrategy: 'skipExisting' })
 ```
 
 ### 合并分片
 
 ```ts
-const chunks = await slicer.avgSliceAsFile()
-await slicer.joinAsFile(chunks, './merged.bin')
+const { chunks, cleanup } = await slicer.avgSliceAsFile({ checksum: true })
+await slicer.joinAsFile(chunks, './merged.bin', { verify: true })
+await cleanup()
 ```
 
 ## ⚠️ 错误处理
 
 - 参数类型错误会直接抛出 `Error`（如 blockSize 不是正整数、index 不合法）。
 - `join` 会在写入前校验分片是否存在，发现缺失时立即抛错并销毁写流，避免产生残缺文件。
+- `verifyChunks` / `join(..., { verify: true })` 会重新计算摘要，发现不一致立即报错。
 - 读写流出现错误会调用 `destroy()` 并移除事件监听，同时让 Promise 进入 reject。
 
 ## 🧠 最佳实践
 
 - **调整块大小**：块太小会导致 IO 频繁；可根据网络/磁盘吞吐选择 1–4 MB 的大小用于上传场景。
-- **管理临时目录**：`avgSliceAsFile` 会生成随机文件，务必在上传/合并完成后清理，以免占满磁盘。
+- **管理临时目录**：调用返回的 `cleanup()` 或 `cleanupChunks`，安全清理生成的分片文件。
 - **保持顺序元数据**：`join` 依赖 `filenameArray` 的顺序，务必保存好原始顺序或附带索引。
 - **避免重复复制**：Buffer 模式已零拷贝复用，无需再次 `Buffer.from()`。
 

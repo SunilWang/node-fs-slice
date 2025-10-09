@@ -21,3 +21,8 @@
 
 ## 环境与依赖提示
 当前最低版本要求为 Node.js 18，依赖主要为开发期工具链（TypeScript、AVA、@types/node）；运行时代码无额外依赖。离线开发请提前缓存 NPM 包。处理大文件时确保磁盘拥有足够空间，必要时调整 `opts.destPath` 指向自定义临时目录。
+
+## 近期特性速览
+- `avgSliceAsFile` 现返回 `{ chunks, cleanup }`，`chunks` 为包含索引、字节区间、摘要、是否新建等信息的分片描述；需通过 `chunks.map(chunk => chunk.filepath)` 获取路径列表。
+- 新增 `filenameFormatter`、`metadataProvider` 选项以及 `cleanupChunks`、`verifyChunks`、`join(..., { verify: true })` 等 API，支持自定义命名、附加元数据、生成/校验摘要与统一清理。
+- 可通过 `resumeStrategy: 'skipExisting'` 与 `concurrency` 控制续传与并发切片行为，默认摘要算法为 `sha256`，可在实例或调用级别覆写。
