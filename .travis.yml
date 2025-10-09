@@ -1,9 +1,6 @@
 language: node_js
 node_js:
-  - "4.9.1"
-  - "6.15.1"
-  - "7.10.0"
-  - "8.14.0"
-  - "10.14.1"
+  - "18"
+  - "20"
 script:
   - "npm run test"

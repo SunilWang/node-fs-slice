@@ -1,338 +1,163 @@
 # node-fs-slice
 
-slice file or join files or avg slice file.idea from [slice-file](https://github.com/substack/slice-file).
+[![npm version](https://img.shields.io/npm/v/fs-slice.svg)](https://www.npmjs.com/package/fs-slice)
+[![npm downloads](https://img.shields.io/npm/dt/fs-slice.svg)](https://www.npmjs.com/package/fs-slice)
+[![TypeScript](https://img.shields.io/badge/typescript-supported-blue.svg)](https://www.typescriptlang.org/)
+[![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-safely create multiple ReadStream or WriteStream objects from the same file descriptor. from [node-fd-slicer](https://github.com/andrewrk/node-fd-slicer).
+🚀 **node-fs-slice** is a streaming-oriented file slicing and merging toolkit for Node.js. It ships with TypeScript definitions, zero-copy Buffer support, automatic directory provisioning, and defensive error handling—perfect for resumable uploads, chunked transfers, and large-file processing pipelines.
 
-[![JavaScript Style Guide](https://img.shields.io/badge/code_style-standard-brightgreen.svg)](https://standardjs.com)
-[![Build Status](https://api.travis-ci.org/SunilWang/node-fs-slice.svg?branch=master)](https://travis-ci.org/SunilWang/node-fs-slice)
-[![NPM Version][npm-image]][npm-url]
+> Looking for the Chinese documentation? See [README-zh.md](README-zh.md).
 
-# install
+## ✨ Highlights
 
-With [npm](https://www.npmjs.com/package/fs-slice) do:
+- **🔪 Precise slicing:** `slice` exposes any byte range as a `Readable` stream without loading entire files in memory.
+- **💾 Memory friendly:** Buffer inputs are cached without cloning, avoiding duplicate allocations for large payloads.
+- **📁 Directory safety:** `sliceAsFile`, `avgSliceAsFile`, and `joinAsFile` create destination directories automatically to prevent `ENOENT` failures.
+- **🧩 Ordered merging:** `join` pipes each chunk sequentially and tears down write streams safely on error.
+- **📐 Even chunking:** `avgSliceAsFile` batches chunk files by block size and can resume from a specific index.
+- **✅ Type safe:** First-class TypeScript types guard parameters and return values.
 
+## 📦 Installation
+
+```bash
+npm install fs-slice
 ```
-npm install fs-slice --save
-```
 
-## Features
+### Requirements
 
-- ✔︎ Promise、async、await
+- Node.js **18.0.0** or higher
 
-# methods
+## 🚀 Quick Start
 
-``` js
-var fss = require('fs-slice');
-```
+### TypeScript / ES Module
 
-## var fssObj = fss(targetFile, opts={})
+```ts
+import fsSlice from 'fs-slice'
 
-Create a fs-slice instance `fssObj` from a `filename` and some options `opts`.
+async function demo () {
+  const slicer = fsSlice('./big-file.bin', { blockSize: 256 * 1024 })
+  const chunks = await slicer.avgSliceAsFile()
+  console.log('Chunks generated:', chunks)
 
-* `targetFile` - String | Buffer. target file.
-* `opts.blockSize` - Number. set how much data to read in each chunk. Default 204800.
-* `opts.destPath` - String. make sure that it is a folder path. Default `os.tmpdir();`.
-
-## var stream = fssObj.slice(opts={})
-
-Return a readable stream that emits
-
-Available `opts`:
-
- * `start` - Number. The offset into the file to start reading from. Defaults 0.
- * `end` - Number. Exclusive upper bound offset into the file to stop reading
-   from. Defaults 204800.
- 
- `opts` is an object or string with the following defaults:
- 
- ```
-{
-  flags: 'r',
-  encoding: null,
-  fd: fssObj.fd,
-  mode: 0o666,
-  autoClose: true
-}
- ```
- to see [fs.createReadStream](https://nodejs.org/dist/latest-v6.x/docs/api/fs.html#fs_fs_createreadstream_path_options)
-
-## fssObj.sliceAsFile(filepath, rOptions={}, wOptions={}).then(function(){});
-
- * `filepath` - String. Make sure `filepath` is a file path.
- * `rOptions` - Object. read stream options.  `wOptions` - Object. write stream options.
-    
-`rOptions wOptions` is an object or string with the following defaults:
-
-```
-rOptions:
-{
-  start: 0,
-  end: 204800,
-  flags: 'r',
-  encoding: null,
-  fd: fssObj.fd,
-  mode: 0o666,
-  autoClose: true
+  await slicer.joinAsFile(chunks, './output.bin')
+  console.log('Merge finished')
 }
 
-wOptions:
-{
-  flags: 'w',
-  defaultEncoding: 'utf8',
-  fd: fs.openSync(filepath, 'w'),
-  mode: 0o666,
-  autoClose: true
-}
+demo().catch(console.error)
 ```
-to see [fs.createReadStream](https://nodejs.org/dist/latest-v6.x/docs/api/fs.html#fs_fs_createreadstream_path_options) [fs.createWriteStream](https://nodejs.org/dist/latest-v6.x/docs/api/fs.html#fs_fs_createwritestream_path_options)
 
-## fssObj.avgSliceAsFile(opts={}).then(function(files){});
-
-Available `opts`:
-
-  * `index` - Number. block start index. Default 1.
-
-## fssObj.join(filenameArray, writable).then(function(){});
-
-  * `filenameArray` - Array[String]. multiple file fragments path, make sure `filenameArray` is a Array.
-  * `writable` - WriteStream. make sure `writable` is a write stream.
-  
-## fssObj.joinAsFile(filenameArray, filepath).then(function(){});
-
-  * `filenameArray` - Array[String]. multiple file fragments path.
-  * `filepath` - WriteStream. Make sure `filepath` is a file path.
-
-# example
-
-## slice
-
-slice file, return read stream
+### CommonJS
 
 ```js
-var fss = require('fs-slice');
-var fsText = fss('./test/data/text');
+const fsSlice = require('fs-slice')
 
-fsText.slice({start: 0, end: 20}).pipe(process.stdout);
+const slicer = fsSlice(Buffer.from('hello world'))
+const stream = slicer.slice({ start: 0, end: 5 })
+stream.pipe(process.stdout)
 ```
 
-```
-A
-A's
-AA's
-AB's
-ABM'
-```
+## ⚙️ Workflow Overview
 
-## sliceAsFile
+1. **Instantiate:** Provide a file path or Buffer; customise via `blockSize`, `destPath`, and `filename`.
+2. **Slice:** Use `slice` for arbitrary `Readable` streams, or `sliceAsFile` to persist a range to disk.
+3. **Batch split:** Invoke `avgSliceAsFile` to export evenly sized chunks, with optional `index` resume support.
+4. **Reassemble:** Supply chunk paths to `join` (with a writable stream) or let `joinAsFile` create one automatically.
 
-slice file, generate new file
+Internally, chunk filenames use a random hex prefix from `crypto.randomBytes`, and `ensureDirectorySync` guarantees output directories exist before writing.
 
-```js
-var fss = require('fs-slice');
-var fs = require('fs');
+## 🔍 API Reference
 
-var IMAGE_FILENAME = './test/data/image.jpg';
-var fsImage = fss(IMAGE_FILENAME);
+| Method                                                 | Description                                                                        |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| `fsSlice(input, opts?)`                              | Factory returning an `FsSliceInstance`. `input` accepts a file path or Buffer. |
+| `slice(options?)`                                    | Returns a `Readable` stream for the given range; defaults to the first block.    |
+| `sliceAsFile(filepath, readOptions?, writeOptions?)` | Writes a range to `filepath`, cleaning up stream listeners on completion.        |
+| `avgSliceAsFile(options?)`                           | Generates chunk files based on block size; supports `index` to resume.           |
+| `join(filenameArray, writable)`                      | Pipes chunk files sequentially into a provided `Writable`.                       |
+| `joinAsFile(filenameArray, filepath)`                | Convenience wrapper that creates a write stream internally.                        |
+| `formatFilename(index?)`                             | Produces chunk names like `<16-byte hex>_<index>_<original name>`.               |
 
-fsImage
-    .sliceAsFile('./new_image.jpg', {start: 0, end: 204800})
-    .then(function () {
-        console.info('image: ', fs.statSync(IMAGE_FILENAME));
-        console.info('new_image: ',fs.statSync('./new_image.jpg'));
-        
-        fs.unlinkSync('./new_image.jpg');
-    })
-    .catch(function (err) {
-        console.error(err);
-    });
-```
+### Options
 
-```
-image:  
-{ 
-  dev: 16777220,
-  mode: 33188,
-  nlink: 1,
-  uid: 501,
-  gid: 20,
-  rdev: 0,
-  blksize: 4096,
-  ino: 29591490,
-  size: 516943,
-  blocks: 1016,
-  atime: 2017-05-16T08:38:04.000Z,
-  mtime: 2017-05-12T08:18:13.000Z,
-  ctime: 2017-05-15T08:12:43.000Z,
-  birthtime: 2017-05-12T08:18:13.000Z 
-}
+| Option                          | Type                      | Default                   | Description                                                                 |
+| ------------------------------- | ------------------------- | ------------------------- | --------------------------------------------------------------------------- |
+| `blockSize`                   | `number`                | `204800`                | Bytes per chunk. Must be a positive integer.                                |
+| `destPath`                    | `string`                | `os.tmpdir()`           | Output directory for `avgSliceAsFile`; also used for generated filenames. |
+| `filename`                    | `string`                | `Date.now().toString()` | Logical filename when slicing Buffers (used in chunk names).                |
+| `slice.start` / `slice.end` | `number`                | `0 / blockSize`         | Range boundaries for `slice`/`sliceAsFile`; `end` is exclusive.       |
+| `avgSliceAsFile.index`        | `number`                | `1`                     | Starting chunk index when resuming; must be a positive integer.             |
+| `writeOptions`                | `fs.WriteStreamOptions` | —                        | Forwarded to `fs.createWriteStream` for advanced control.                 |
 
+## 📚 Usage Examples
 
-new_image:  
-{ dev: 16777220,
-  mode: 33188,
-  nlink: 1,
-  uid: 501,
-  gid: 20,
-  rdev: 0,
-  blksize: 4096,
-  ino: 29878556,
-  size: 204800, //200kb
-  blocks: 400,
-  atime: 2017-05-16T08:37:13.000Z,
-  mtime: 2017-05-16T08:38:04.000Z,
-  ctime: 2017-05-16T08:38:04.000Z,
-  birthtime: 2017-05-16T08:37:13.000Z 
-}
+### Read an arbitrary range
+
+```ts
+const slicer = fsSlice('./test/data/text')
+const readable = slicer.slice({ start: 10, end: 30 })
+readable.on('data', chunk => {
+  console.log('Fragment:', chunk.toString())
+})
 ```
 
-## avgSliceAsFile
+### Persist a slice to disk
 
-average slice file, generate multiple file fragments
-
-```js
-var fss = require('fs-slice');
-var fs = require('fs');
-
-var IMAGE_FILENAME = './test/data/image.jpg';
-var fsImage = fss(IMAGE_FILENAME);
-
-fsImage
-    //blockSize default : 204800 byte (200kb)
-    .avgSliceAsFile()
-    .then(function (files) {
-        console.info('##############', IMAGE_FILENAME, 'size: ', fs.statSync(IMAGE_FILENAME).size);
-        console.info('############## files: \n', files);
-        console.info('##############');
-        for(let file of files){
-            console.info(file, 'size: ',fs.statSync(file).size);
-
-            fs.unlinkSync(file);
-        }
-    })
-    .catch(function (err) {
-        console.error(err);
-    });
+```ts
+await slicer.sliceAsFile('./temp/part-1.bin', { start: 0, end: 1024 })
 ```
 
-```
-############## ./test/data/image.jpg size:  516943
-############## files: 
- [ '/var/folders/02/g9c5v3jn3fv7q1zbnxhf7n280000gn/T/a7ed4d23c8d3ddf3761db74823196a54_1_image.jpg',
-  '/var/folders/02/g9c5v3jn3fv7q1zbnxhf7n280000gn/T/260d0a57d94d31aea6e3892b239e1a5a_2_image.jpg',
-  '/var/folders/02/g9c5v3jn3fv7q1zbnxhf7n280000gn/T/f47c7e739b6aa75df173751c9788d746_3_image.jpg',
-############## files size: 
-/var/folders/02/g9c5v3jn3fv7q1zbnxhf7n280000gn/T/a7ed4d23c8d3ddf3761db74823196a54_1_image.jpg size:  204800
-/var/folders/02/g9c5v3jn3fv7q1zbnxhf7n280000gn/T/260d0a57d94d31aea6e3892b239e1a5a_2_image.jpg size:  204800
-/var/folders/02/g9c5v3jn3fv7q1zbnxhf7n280000gn/T/f47c7e739b6aa75df173751c9788d746_3_image.jpg size:  107343
+### Even chunking with resume
 
+```ts
+// Generate all chunks
+const files = await slicer.avgSliceAsFile()
+
+// Resume from the third chunk
+const rest = await slicer.avgSliceAsFile({ index: 3 })
 ```
 
-## join
+### Merge chunks
 
-multiple file fragments, join into write stream
-
-```js
-var fss = require('fs-slice');
-var fs = require('fs');
-
-var IMAGE_FILENAME = './test/data/image.jpg';
-var fsImage = fss(IMAGE_FILENAME);
-var tmpFiles = null;
-
-fsImage
-    .avgSliceAsFile({destPath: './test/temp/'})
-    .then(function (files) {
-        tmpFiles = files;
-
-        var writable = fs.createWriteStream('./new_image.jpg');
-
-        return fsImage.join(files, writable);
-    })
-    .then(function () {
-        for(let file of tmpFiles){
-            console.info(file, 'size: ',fs.statSync(file).size);
-            fs.unlinkSync(file);
-        }
-
-        console.info('./new_image.jpg', 'size: ',fs.statSync('./new_image.jpg').size);
-        fs.unlinkSync('./new_image.jpg');
-     })
-    .catch(function (err) {
-        console.error(err);
-    });
+```ts
+const chunks = await slicer.avgSliceAsFile()
+await slicer.joinAsFile(chunks, './merged.bin')
 ```
 
-```
-test/temp/5529a793a61c5867ae0da4831e41a024_1_image.jpg size:  204800
-test/temp/9bd357ca82355b1919f9dd6a7633a26e_2_image.jpg size:  204800
-test/temp/48f548b841d3ceeab7a6887984b1fdf3_3_image.jpg size:  107343
+## ⚠️ Error Handling
 
-./new_image.jpg size:  516943
-```
+- Invalid parameters (e.g., non-integer `blockSize` or `index`) throw synchronously.
+- `join` validates chunk paths before piping and destroys the write stream on failure to avoid partial files.
+- Stream errors trigger `destroy()` on both ends and reject the surrounding Promise.
 
-## joinAsFile
+## 🧠 Best Practices
 
-multiple file fragments, join into one file
+- **Tune `blockSize`:** Extremely small blocks amplify IO overhead. Consider 1–4 MB chunks for upload scenarios.
+- **Manage temp files:** `avgSliceAsFile` creates random files—clean them up after use.
+- **Preserve order metadata:** `join` depends on the order of `filenameArray`; persist the original sequence.
+- **Avoid extra copies:** Buffer mode already uses zero-copy caching; no need for additional `Buffer.from()` calls.
 
-```js
-var fss = require('fs-slice');
-var fs = require('fs');
+## 🧪 Scripts & Testing
 
-var TEXT_FILENAME = './test/data/text';
-var fsText = fss(TEXT_FILENAME);
-
-fsText
-    .sliceAsFile('./text1',{start: 0, end: 10})
-    .then(function () {
-        return fsText.sliceAsFile('./text2',{start: 10, end: 20});
-    })
-    .then(function () {
-        return fsText.joinAsFile(['./text1', './text2'], './new_text');
-    })
-    .then(function (files) {
-        console.info('############## file content');
-        console.info('text1: ', JSON.stringify(fs.readFileSync('./text1', 'utf-8')));
-        console.info('text2: ', JSON.stringify(fs.readFileSync('./text2', 'utf-8')));
-        console.info('############## files size');
-        console.info('./text1', 'size: ',fs.statSync('./text1').size);
-        console.info('./text2', 'size: ',fs.statSync('./text2').size);
-        console.info('');
-        console.info('');
-        console.info('############## new file content');
-        console.info('./new_text: ', JSON.stringify(fs.readFileSync('./new_text', 'utf-8')));
-        console.info('############## new file size');
-        console.info('./new_text', 'size: ',fs.statSync('./new_text').size);
-
-
-        fs.unlinkSync('./text1');
-        fs.unlinkSync('./text2');
-        fs.unlinkSync('./new_text');
-    })
-    .catch(function (err) {
-        console.error(err);
-    });
+```bash
+npm run clean      # remove dist/
+npm run build      # run TypeScript compiler
+npm test           # clean + tsc + AVA over all .mjs tests
 ```
 
-```
-############## file content
-text1:  "A\nA's\nAA's"
-text2:  "\nAB's\nABM'"
-############## files size
-./text1 size:  10
-./text2 size:  10
+The AVA suite covers both string and Buffer workflows, including index validation, directory creation, and error paths.
 
+## 🤝 Contributing
 
-############## new file content
-./new_text:  "A\nA's\nAA's\nAB's\nABM'"
-############## new file size
-./new_text size:  20
+1. Fork the repo and ensure Node.js 18+ is installed.
+2. Run `npm install` to grab dependencies.
+3. Follow the existing TypeScript conventions (two-space indentation, single quotes, strict mode).
+4. Before submitting, execute `npm run build` and `npm test`.
+5. Update documentation or examples when adding new features.
 
-```
+Issues and pull requests are warmly welcomed.
 
-# license
+## 📄 License
 
-MIT
-
-[npm-image]: https://img.shields.io/npm/v/fs-slice.svg
-[npm-url]: https://www.npmjs.com/package/fs-slice
+MIT © Sunil Wang
